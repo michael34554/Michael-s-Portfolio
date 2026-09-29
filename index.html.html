@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GuardAI — Email Spam Classification Engine</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { background: #0f172a; color: #f8fafc; padding: 2rem; max-width: 900px; margin: 0 auto; line-height: 1.5; }
+        
+        .header { margin-bottom: 2rem; }
+        h1 { color: #38bdf8; font-size: 2.2rem; margin-bottom: 0.25rem; font-weight: 700; }
+        p.subtitle { color: #94a3b8; font-size: 1rem; }
+        
+        .card { background: #1e293b; padding: 1.75rem; border-radius: 12px; border: 1px solid #334155; margin-bottom: 2rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
+        .card h3 { color: #f1f5f9; font-size: 1.25rem; margin-bottom: 1rem; }
+        
+        textarea { width: 100%; height: 130px; background: #0f172a; color: #f8fafc; border: 1px solid #334155; border-radius: 8px; padding: 1rem; font-size: 0.95rem; resize: vertical; margin-bottom: 1rem; }
+        textarea:focus { outline: none; border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
+        
+        .btn-group { display: flex; gap: 0.75rem; align-items: center; }
+        button { background: #0284c7; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 0.95rem; }
+        button:hover { background: #0369a1; }
+        button.btn-clear { background: #334155; color: #cbd5e1; }
+        button.btn-clear:hover { background: #475569; }
+        
+        .result-box { margin-top: 1.25rem; padding: 1rem 1.25rem; border-radius: 8px; display: none; font-size: 1rem; }
+        .result-spam { background: #450a0a; border: 1px solid #991b1b; color: #fca5a5; }
+        .result-ham { background: #064e3b; border: 1px solid #065f46; color: #6ee7b7; }
+        
+        .table-wrapper { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+        th, td { padding: 0.85rem 1rem; border-bottom: 1px solid #334155; }
+        th { color: #94a3b8; font-weight: 600; background: #182234; }
+        tr:last-child td { border-bottom: none; }
+        
+        .tag { padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+        .tag-spam { background: #991b1b; color: #fecaca; }
+        .tag-ham { background: #065f46; color: #a7f3d0; }
+        
+        .timestamp { color: #64748b; font-size: 0.8rem; }
+        .empty-log { color: #64748b; text-align: center; padding: 1.5rem; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>GuardAI</h1>
+        <p class="subtitle">Client-Side Naive Bayes Email Spam Classification & Analysis Engine</p>
+    </div>
+
+    <div class="card">
+        <h3>Analyze Email Content</h3>
+        <textarea id="emailInput" placeholder="Paste email content here to inspect (e.g., 'Win a free gift card now!' or 'Hey, meeting rescheduled to 3 PM')..."></textarea>
+        <div class="btn-group">
+            <button onclick="analyzeEmail()">Run Analysis</button>
+            <button class="btn-clear" onclick="clearLogs()">Clear History Log</button>
+        </div>
+
+        <div id="resultBox" class="result-box">
+            Classification: <strong id="resPrediction"></strong> &nbsp;|&nbsp; 
+            Confidence Score: <strong id="resConfidence"></strong>%
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Classification History Log</h3>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Email Snippet</th>
+                        <th>Prediction</th>
+                        <th>Confidence</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody id="logsTableBody">
+                    <!-- Dynamic logs populated via JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Naive Bayes ML Engine (Client-Side Implementation) ---
+        const STOP_WORDS = new Set(["a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "as", "at", "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "could", "did", "do", "does", "doing", "down", "during", "each", "few", "for", "from", "further", "had", "has", "have", "having", "he", "her", "here", "hers", "herself", "him", "himself", "his", "how", "i", "if", "in", "into", "is", "it", "its", "itself", "me", "more", "most", "my", "myself", "nor", "of", "on", "once", "only", "or", "other", "our", "ours", "ourselves", "out", "over", "own", "same", "she", "should", "so", "some", "such", "than", "that", "the", "their", "theirs", "them", "themselves", "then", "there", "these", "they", "this", "those", "through", "to", "too", "under", "until", "up", "very", "was", "we", "were", "what", "when", "where", "which", "while", "who", "whom", "why", "with", "you", "your", "yours", "yourself", "yourselves"]);
+
+        const TRAINING_CORPUS = [
+            { text: "Win a free iPhone now! Click here to claim your cash prize today.", label: "spam" },
+            { text: "Urgent! Your account has been compromised. Verify immediately or lose access.", label: "spam" },
+            { text: "Congratulations! You won a $1000 gift card. Call this special offer number now.", label: "spam" },
+            { text: "Exclusive discount deal just for you! Buy cheap products now and save 80%.", label: "spam" },
+            { text: "Earn fast money working from home! Click this link for instant access.", label: "spam" },
+            { text: "Hey, are we still meeting for lunch today at 12:30 PM?", label: "ham" },
+            { text: "Please find attached the project status report and update document for review.", label: "ham" },
+            { text: "Can you send me the updated class schedule for tomorrow morning?", label: "ham" },
+            { text: "The team engineering meeting has been rescheduled to 3 PM in conference room B.", label: "ham" },
+            { text: "Thanks for your assistance with the slide presentation yesterday.", label: "ham" }
+        ];
+
+        class NaiveBayesClassifier {
+            constructor() {
+                this.vocabulary = new Set();
+                this.classDocCounts = { spam: 0, ham: 0 };
+                this.classWordCounts = { spam: 0, ham: 0 };
+                this.wordFrequencies = { spam: {}, ham: {} };
+                this.totalDocs = 0;
+            }
+
+            tokenize(text) {
+                return text
+                    .toLowerCase()
+                    .replace(/[^\w\s]/g, '')
+                    .split(/\s+/)
+                    .filter(word => word.length > 2 && !STOP_WORDS.has(word));
+            }
+
+            train(corpus) {
+                corpus.forEach(item => {
+                    const label = item.label;
+                    const tokens = this.tokenize(item.text);
+                    this.classDocCounts[label]++;
+                    this.totalDocs++;
+
+                    tokens.forEach(token => {
+                        this.vocabulary.add(token);
+                        this.wordFrequencies[label][token] = (this.wordFrequencies[label][token] || 0) + 1;
+                        this.classWordCounts[label]++;
+                    });
+                });
+            }
+
+            predict(text) {
+                const tokens = this.tokenize(text);
+                const vocabSize = this.vocabulary.size || 1;
+                const scores = {};
+
+                ['spam', 'ham'].forEach(label => {
+                    const prior = Math.log(this.classDocCounts[label] / this.totalDocs);
+                    let logLikelihood = 0;
+
+                    tokens.forEach(token => {
+                        const count = this.wordFrequencies[label][token] || 0;
+                        // Laplace Smoothing (+1)
+                        const prob = (count + 1) / (this.classWordCounts[label] + vocabSize);
+                        logLikelihood += Math.log(prob);
+                    });
+
+                    scores[label] = prior + logLikelihood;
+                });
+
+                // Calculate probability using Softmax on log scores
+                const maxLog = Math.max(scores.spam, scores.ham);
+                const expSpam = Math.exp(scores.spam - maxLog);
+                const expHam = Math.exp(scores.ham - maxLog);
+                const probSpam = expSpam / (expSpam + expHam);
+
+                const isSpam = probSpam >= 0.5;
+                const confidence = isSpam ? probSpam : (1 - probSpam);
+
+                return {
+                    prediction: isSpam ? 'spam' : 'ham',
+                    confidence: Math.round(confidence * 1000) / 10
+                };
+            }
+        }
+
+        const classifier = new NaiveBayesClassifier();
+        classifier.train(TRAINING_CORPUS);
+
+        // --- 2. LocalStorage & Interface Controller ---
+        const STORAGE_KEY = "guardai_classification_logs";
+
+        function getLogs() {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            return raw ? JSON.parse(raw) : [];
+        }
+
+        function saveLog(emailText, prediction, confidence) {
+            const logs = getLogs();
+            const newEntry = {
+                id: logs.length + 1,
+                emailText: emailText,
+                prediction: prediction,
+                confidence: confidence,
+                timestamp: new Date().toLocaleString()
+            };
+            logs.unshift(newEntry);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
+            renderLogs();
+        }
+
+        function clearLogs() {
+            if (confirm("Are you sure you want to clear all log history?")) {
+                localStorage.removeItem(STORAGE_KEY);
+                renderLogs();
+            }
+        }
+
+        function renderLogs() {
+            const logs = getLogs();
+            const tbody = document.getElementById('logsTableBody');
+            
+            if (logs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="empty-log">No logs recorded yet. Analyze an email above to populate history.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = logs.map(log => `
+                <tr>
+                    <td>#${log.id}</td>
+                    <td>${escapeHtml(log.emailText.length > 50 ? log.emailText.substring(0, 50) + '...' : log.emailText)}</td>
+                    <td><span class="tag tag-${log.prediction}">${log.prediction}</span></td>
+                    <td>${log.confidence}%</td>
+                    <td class="timestamp">${log.timestamp}</td>
+                </tr>
+            `).join('');
+        }
+
+        function analyzeEmail() {
+            const input = document.getElementById('emailInput');
+            const text = input.value.trim();
+            const resultBox = document.getElementById('resultBox');
+
+            if (!text) {
+                alert("Please enter or paste email content to analyze.");
+                return;
+            }
+
+            const result = classifier.predict(text);
+            const isSpam = result.prediction === 'spam';
+
+            resultBox.className = 'result-box ' + (isSpam ? 'result-spam' : 'result-ham');
+            document.getElementById('resPrediction').innerText = result.prediction.toUpperCase();
+            document.getElementById('resConfidence').innerText = result.confidence;
+            resultBox.style.display = 'block';
+
+            saveLog(text, result.prediction, result.confidence);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        // Initialize UI on Load
+        document.addEventListener('DOMContentLoaded', renderLogs);
+    </script>
+</body>
+</html>
